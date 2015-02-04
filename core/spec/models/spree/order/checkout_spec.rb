@@ -47,6 +47,21 @@ describe Spree::Order, :type => :model do
       expect(Spree::Order.remove_transition(nil)).to be_falsey
     end
 
+    it "always return integer on checkout_step_index" do
+      expect(order.checkout_step_index("imnotthere")).to be_a Integer
+      expect(order.checkout_step_index("delivery")).to be > 0
+    end
+
+    it "passes delivery state when transitioning from address over delivery to payment" do
+      allow(order).to receive_messages :payment_required? => true
+      order.state = "address"
+      expect(order.passed_checkout_step?("delivery")).to be false
+      order.state = "delivery"
+      expect(order.passed_checkout_step?("delivery")).to be false
+      order.state = "payment"
+      expect(order.passed_checkout_step?("delivery")).to be true
+    end
+
     context "#checkout_steps" do
       context "when confirmation not required" do
         before do
@@ -335,6 +350,26 @@ describe Spree::Order, :type => :model do
       end
     end
 
+    context "to payment" do
+      before do
+        @default_credit_card = FactoryGirl.create(:credit_card)
+        order.user = mock_model(Spree::LegacyUser, default_credit_card: @default_credit_card, email: 'spree@example.org')
+
+        allow(order).to receive_messages(payment_required?: true)
+        order.state = 'delivery'
+        order.save!
+      end
+
+      it "assigns the user's default credit card" do
+        order.next!
+        order.reload
+
+        expect(order.state).to eq 'payment'
+        expect(order.payments.count).to eq 1
+        expect(order.payments.first.source).to eq @default_credit_card
+      end
+    end
+
     context "from payment" do
       before do
         order.state = 'payment'
@@ -399,6 +434,40 @@ describe Spree::Order, :type => :model do
           assert_state_changed(order, 'payment', 'complete')
           expect(order.state).to eq("complete")
         end
+      end
+    end
+  end
+
+  context "to complete" do
+    before do
+      order.state = 'confirm'
+      order.save!
+    end
+
+    context "default credit card" do
+      before do
+        order.user = FactoryGirl.create(:user)
+        order.email = 'spree@example.org'
+        order.payments << FactoryGirl.create(:payment)
+
+        # make sure we will actually capture a payment
+        allow(order).to receive_messages(payment_required?: true)
+        order.line_items << FactoryGirl.create(:line_item)
+        Spree::OrderUpdater.new(order).update
+
+        order.save!
+      end
+
+      it "makes the current credit card a user's default credit card" do
+        order.next!
+        expect(order.state).to eq 'complete'
+        expect(order.user.reload.default_credit_card.try(:id)).to eq(order.credit_cards.first.id)
+      end
+
+      it "does not assign a default credit card if temporary_credit_card is set" do
+        order.temporary_credit_card = true
+        order.next!
+        expect(order.user.reload.default_credit_card).to be_nil
       end
     end
   end
@@ -471,6 +540,7 @@ describe Spree::Order, :type => :model do
     it "does not attempt to process payments" do
       allow(order).to receive_message_chain(:line_items, :present?) { true }
       allow(order).to receive(:ensure_line_items_are_in_stock) { true }
+      allow(order).to receive(:ensure_line_item_variants_are_not_deleted) { true }
       expect(order).not_to receive(:payment_required?)
       expect(order).not_to receive(:process_payments!)
       order.next!
@@ -548,7 +618,6 @@ describe Spree::Order, :type => :model do
 
   describe "payment processing" do
     self.use_transactional_fixtures = false
-
     before do
       Spree::PaymentMethod.destroy_all # TODO data is leaking between specs as database_cleaner or rspec 3 was broken in Rails 4.1.6 & 4.0.10
       # Turn off transactional fixtures so that we can test that
@@ -574,7 +643,6 @@ describe Spree::Order, :type => :model do
         expect(ActiveRecord::Base.connection.open_transactions).to eq 0
       end
 
-      order.payments.create!(payment_method: Spree::PaymentMethod.first, amount: order.total, source: creditcard)
       order.next!
     end
   end
@@ -603,8 +671,7 @@ describe Spree::Order, :type => :model do
 
       let(:params) do
         ActionController::Parameters.new(
-          order: { payments_attributes: [{payment_method_id: 1}] },
-          existing_card: credit_card.id,
+          order: { payments_attributes: [{payment_method_id: 1}], existing_card: credit_card.id },
           cvc_confirm: "737",
           payment_source: {
             "1" => { name: "Luis Braga",

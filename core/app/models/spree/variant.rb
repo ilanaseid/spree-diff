@@ -2,6 +2,8 @@ module Spree
   class Variant < Spree::Base
     acts_as_paranoid
 
+    include Spree::DefaultPrice
+
     belongs_to :product, touch: true, class_name: 'Spree::Product', inverse_of: :variants
     belongs_to :tax_category, class_name: 'Spree::TaxCategory'
 
@@ -20,14 +22,6 @@ module Spree
     has_and_belongs_to_many :option_values, join_table: :spree_option_values_variants
     has_many :images, -> { order(:position) }, as: :viewable, dependent: :destroy, class_name: "Spree::Image"
 
-    has_one :default_price,
-      -> { where currency: Spree::Config[:currency] },
-      class_name: 'Spree::Price',
-      dependent: :destroy,
-      inverse_of: :variant
-
-    delegate_belongs_to :default_price, :display_price, :display_amount, :price, :price=, :currency
-
     has_many :prices,
       class_name: 'Spree::Price',
       dependent: :destroy,
@@ -41,13 +35,13 @@ module Spree
     validates :price,      numericality: { greater_than_or_equal_to: 0, allow_nil: true }
     validates_uniqueness_of :sku, allow_blank: true, conditions: -> { where(deleted_at: nil) }
 
-    after_save :save_default_price
-
     after_create :create_stock_items
     after_create :set_position
     after_create :set_master_out_of_stock, unless: :is_master?
 
     after_touch :clear_in_stock_cache
+
+    scope :in_stock, -> { joins(:stock_items).where('count_on_hand > ? OR track_inventory = ?', 0, false) }
 
     def self.active(currency = nil)
       joins(:prices).where(deleted_at: nil).where('spree_prices.currency' => currency || Spree::Config[:currency]).where('spree_prices.amount IS NOT NULL')
@@ -104,10 +98,6 @@ module Spree
       Spree::Product.unscoped { super }
     end
 
-    def default_price
-      Spree::Price.unscoped { super }
-    end
-
     def options=(options = {})
       options.each do |option|
         set_option_value(option[:name], option[:value])
@@ -148,16 +138,38 @@ module Spree
       self.option_values.detect { |o| o.option_type.name == opt_name }.try(:presentation)
     end
 
-    def has_default_price?
-      !self.default_price.nil?
-    end
-
     def price_in(currency)
       prices.select{ |price| price.currency == currency }.first || Spree::Price.new(variant_id: self.id, currency: currency)
     end
 
     def amount_in(currency)
       price_in(currency).try(:amount)
+    end
+
+    def price_modifier_amount_in(currency, options = {})
+      return 0 unless options.present?
+
+      options.keys.map { |key|
+        m = "#{key}_price_modifier_amount_in".to_sym
+        if self.respond_to? m
+          self.send(m, currency, options[key])
+        else
+          0
+        end
+      }.sum
+    end
+
+    def price_modifier_amount(options = {})
+      return 0 unless options.present?
+
+      options.keys.map { |key|
+        m = "#{options[key]}_price_modifier_amount".to_sym
+        if self.respond_to? m
+          self.send(m, options[key])
+        else
+          0
+        end
+      }.sum
     end
 
     def name_and_sku
@@ -209,21 +221,13 @@ module Spree
         end
       end
 
-      def default_price_changed?
-        default_price && (default_price.changed? || default_price.new_record?)
-      end
-
-      def save_default_price
-        default_price.save if default_price_changed?
-      end
-
       def set_cost_currency
         self.cost_currency = Spree::Config[:currency] if cost_currency.nil? || cost_currency.empty?
       end
 
       def create_stock_items
-        StockLocation.all.each do |stock_location|
-          stock_location.propagate_variant(self) if stock_location.propagate_all_variants?
+        StockLocation.where(propagate_all_variants: true).each do |stock_location|
+          stock_location.propagate_variant(self)
         end
       end
 

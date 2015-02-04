@@ -223,38 +223,6 @@ module Spree
           end
         end
 
-        context "crediting" do
-          before do
-            payment.purchase!
-          end
-
-          it "can credit" do
-            api_put :credit, :id => payment.to_param
-            expect(response.status).to eq(200)
-            expect(payment.reload.state).to eq("completed")
-
-            # Ensure that a credit payment was created, and it has correct credit amount
-            credit_payment = Payment.where(:source_type => 'Spree::Payment', :source_id => payment.id).last
-            expect(credit_payment.amount.to_f).to eq(-45.75)
-          end
-
-          context "crediting fails" do
-            it "returns a 422 status" do
-              fake_response = double(:success? => false, :to_s => "NO CREDIT FOR YOU")
-              expect_any_instance_of(Spree::Gateway::Bogus).to receive(:credit).and_return(fake_response)
-              api_put :credit, :id => payment.to_param
-              expect(response.status).to eq(422)
-              expect(json_response["error"]).to eq "Invalid resource. Please fix errors and try again."
-              expect(json_response["errors"]["base"][0]).to eq "NO CREDIT FOR YOU"
-            end
-
-            it "cannot credit over credit_allowed limit" do
-              api_put :credit, :id => payment.to_param, :amount => 1000000
-              expect(response.status).to eq(422)
-              expect(json_response["error"]).to eq("This payment can only be credited up to 45.75. Please specify an amount less than or equal to this number.")
-            end
-          end
-        end
       end
     end
   end

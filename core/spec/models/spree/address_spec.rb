@@ -19,7 +19,7 @@ describe Spree::Address, :type => :model do
                          :phone => 'phone',
                          :state_id => state.id,
                          :state_name => state.name,
-                         :zipcode => 'zip_code')
+                         :zipcode => '10001')
 
       cloned = original.clone
 
@@ -137,11 +137,46 @@ describe Spree::Address, :type => :model do
     it "requires zipcode" do
       address.zipcode = ""
       address.valid?
-      expect(address.error_on(:zipcode).size).to eq(1)
+      expect(address.errors['zipcode']).to include("can't be blank")
+    end
+
+    context "zipcode validation" do
+      it "validates the zipcode" do
+        allow(address.country).to receive(:iso).and_return('US')
+        address.zipcode = 'abc'
+        address.valid?
+        expect(address.errors['zipcode']).to include('is invalid')
+      end
+
+      context 'does not validate' do
+        it 'does not have a country' do
+          address.country = nil
+          address.valid?
+          expect(address.errors['zipcode']).not_to include('is invalid')
+        end
+
+        it 'does not have an iso' do
+          allow(address.country).to receive(:iso).and_return(nil)
+          address.valid?
+          expect(address.errors['zipcode']).not_to include('is invalid')
+        end
+
+        it 'does not have a zipcode' do
+          address.zipcode = ""
+          address.valid?
+          expect(address.errors['zipcode']).not_to include('is invalid')
+        end
+
+        it 'does not have a supported country iso' do
+          allow(address.country).to receive(:iso).and_return('BO')
+          address.valid?
+          expect(address.errors['zipcode']).not_to include('is invalid')
+        end
+      end
     end
 
     context "phone not required" do
-      before { allow(address).to receive_messages :require_phone? => false }
+      before { allow(address).to receive_messages require_phone?: false }
 
       it "shows no errors when phone is blank" do
         address.phone = ""
@@ -151,7 +186,7 @@ describe Spree::Address, :type => :model do
     end
 
     context "zipcode not required" do
-      before { allow(address).to receive_messages :require_zipcode? => false }
+      before { allow(address).to receive_messages require_zipcode?: false }
 
       it "shows no errors when phone is blank" do
         address.zipcode = ""
@@ -185,12 +220,12 @@ describe Spree::Address, :type => :model do
     end
 
     context "user given" do
-      let(:bill_address) { double("BillAddress") }
+      let(:bill_address) { Spree::Address.new(phone: Time.now.to_i) }
       let(:ship_address) { double("ShipAddress") }
       let(:user) { double("User", bill_address: bill_address, ship_address: ship_address) }
 
-      it "returns that user bill address" do
-        expect(subject.default(user)).to eq bill_address
+      it "returns a copy of that user bill address" do
+        expect(subject.default(user).phone).to eq bill_address.phone
       end
 
       it "falls back to build default when user has no address" do

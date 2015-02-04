@@ -54,8 +54,6 @@ describe "States", :type => :feature do
       page.execute_script("$('#country').trigger('change');")
 
       click_link "new_state_link"
-      sleep 2
-
       fill_in "state_name", :with => "Pest megye"
       fill_in "Abbreviation", :with => "PE"
       click_button "Create"

@@ -14,7 +14,7 @@ describe 'Payments', :type => :feature do
       )
     end
 
-    let(:order) { create(:completed_order_with_totals, number: 'R100') }
+    let(:order) { create(:completed_order_with_totals, number: 'R100', line_items_count: 5) }
     let(:state) { 'checkout' }
 
     before do
@@ -68,9 +68,9 @@ describe 'Payments', :type => :feature do
 
     it 'lists and create payments for an order', js: true do
       within_row(1) do
-        expect(column_text(2)).to eq('$150.00')
-        expect(column_text(3)).to eq('Credit Card')
-        expect(column_text(4)).to eq('CHECKOUT')
+        expect(column_text(3)).to eq('$150.00')
+        expect(column_text(4)).to eq('Credit Card')
+        expect(column_text(6)).to eq('CHECKOUT')
       end
 
       click_icon :void
@@ -78,9 +78,9 @@ describe 'Payments', :type => :feature do
       expect(page).to have_content('Payment Updated')
 
       within_row(1) do
-        expect(column_text(2)).to eq('$150.00')
-        expect(column_text(3)).to eq('Credit Card')
-        expect(column_text(4)).to eq('VOID')
+        expect(column_text(3)).to eq('$150.00')
+        expect(column_text(4)).to eq('Credit Card')
+        expect(column_text(6)).to eq('VOID')
       end
 
       click_on 'New Payment'

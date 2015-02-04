@@ -31,6 +31,32 @@ module Spree
       context "working with an existing image" do
         let!(:product_image) { product.master.images.create!(:attachment => image('thinking-cat.jpg')) }
 
+        it "can get a single product image" do
+          api_get :show, :id => product_image.id, :product_id => product.id
+          expect(response.status).to eq(200)
+          expect(json_response).to have_attributes(attributes)
+        end
+
+        it "can get a single variant image" do
+          api_get :show, :id => product_image.id, :variant_id => product.master.id
+          expect(response.status).to eq(200)
+          expect(json_response).to have_attributes(attributes)
+        end
+
+        it "can get a list of product images" do
+          api_get :index, :product_id => product.id
+          expect(response.status).to eq(200)
+          expect(json_response).to have_key("images")
+          expect(json_response["images"].first).to have_attributes(attributes)
+        end
+
+        it "can get a list of variant images" do
+          api_get :index, :variant_id => product.master.id
+          expect(response.status).to eq(200)
+          expect(json_response).to have_key("images")
+          expect(json_response["images"].first).to have_attributes(attributes)
+        end
+
         it "can update image data" do
           expect(product_image.position).to eq(1)
           api_post :update, :image => { :position => 2 }, :id => product_image.id, :product_id => product.id

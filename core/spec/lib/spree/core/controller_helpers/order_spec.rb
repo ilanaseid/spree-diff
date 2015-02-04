@@ -9,6 +9,7 @@ describe Spree::Core::ControllerHelpers::Order, type: :controller do
 
   let(:user) { create(:user) }
   let(:order) { create(:order, user: user) }
+  let(:store) { create(:store) }
 
   describe '#simple_current_order' do
     before { allow(controller).to receive_messages(try_spree_current_user: user) }
@@ -24,6 +25,7 @@ describe Spree::Core::ControllerHelpers::Order, type: :controller do
   describe '#current_order' do
     before {
       Spree::Order.destroy_all # TODO data is leaking between specs as database_cleaner or rspec 3 was broken in Rails 4.1.6 & 4.0.10
+      allow(controller).to receive_messages(current_store: store)
       allow(controller).to receive_messages(try_spree_current_user: user)
     }
     context 'create_order_if_necessary option is false' do
@@ -37,6 +39,11 @@ describe Spree::Core::ControllerHelpers::Order, type: :controller do
         expect {
           controller.current_order(create_order_if_necessary: true)
         }.to change(Spree::Order, :count).to(1)
+      end
+
+      it 'assigns the current_store id' do
+        controller.current_order(create_order_if_necessary: true)
+        expect(Spree::Order.last.store_id).to eq store.id
       end
     end
   end

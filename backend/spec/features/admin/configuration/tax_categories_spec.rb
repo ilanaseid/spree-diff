@@ -10,13 +10,14 @@ describe "Tax Categories", :type => :feature do
 
   context "admin visiting tax categories list" do
     it "should display the existing tax categories" do
-      create(:tax_category, :name => "Clothing", :description => "For Clothing")
+      create(:tax_category, :name => "Clothing", :tax_code => "CL001", :description => "For Clothing")
       click_link "Tax Categories"
       expect(page).to have_content("Listing Tax Categories")
       within_row(1) do
         expect(column_text(1)).to eq("Clothing")
-        expect(column_text(2)).to eq("For Clothing")
-        expect(column_text(3)).to eq("No")
+        expect(column_text(2)).to eq("CL001")
+        expect(column_text(3)).to eq("For Clothing")
+        expect(column_text(4)).to eq("No")
       end
     end
   end

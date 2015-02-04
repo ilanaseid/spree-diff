@@ -21,7 +21,7 @@
 module Spree
   class Product < Spree::Base
     extend FriendlyId
-    friendly_id :slug_candidates, use: :slugged
+    friendly_id :slug_candidates, use: :history
 
     acts_as_paranoid
 
@@ -70,7 +70,7 @@ module Spree
     has_many :variant_images, -> { order(:position) }, source: :images, through: :variants_including_master
 
     after_create :set_master_variant_defaults
-    after_create :add_properties_and_option_types_from_prototype
+    after_create :add_associations_from_prototype
     after_create :build_variants_from_option_values_hash, if: :option_values_hash
 
     after_destroy :punch_slug
@@ -86,6 +86,7 @@ module Spree
     before_validation :validate_master
 
     validates :meta_keywords, length: { maximum: 255 }
+    validates :meta_title, length: { maximum: 255 }
     validates :name, presence: true
     validates :price, presence: true, if: proc { Spree::Config[:require_master_price] }
     validates :shipping_category_id, presence: true
@@ -219,12 +220,13 @@ module Spree
 
     private
 
-    def add_properties_and_option_types_from_prototype
+    def add_associations_from_prototype
       if prototype_id && prototype = Spree::Prototype.find_by(id: prototype_id)
         prototype.properties.each do |property|
           product_properties.create(property: property)
         end
         self.option_types = prototype.option_types
+        self.taxons = prototype.taxons
       end
     end
 
@@ -302,8 +304,8 @@ module Spree
     # Try building a slug based on the following fields in increasing order of specificity.
     def slug_candidates
       [
-          :name,
-          [:name, :sku]
+        :name,
+        [:name, :sku]
       ]
     end
 

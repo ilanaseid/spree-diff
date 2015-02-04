@@ -142,6 +142,20 @@ module Spree
       expect(Spree::StockLocation.active.count).to eq 1
     end
 
+    it 'ensures only one stock location is default at a time' do
+      first = create(:stock_location, :active => true, :default => true)
+      second = create(:stock_location, :active => true, :default => true)
+
+      expect(first.reload.default).to eq false
+      expect(second.reload.default).to eq true
+
+      first.default = true
+      first.save!
+
+      expect(first.reload.default).to eq true
+      expect(second.reload.default).to eq false
+    end
+
     context 'fill_status' do
       it 'all on_hand with no backordered' do
         on_hand, backordered = subject.fill_status(variant, 5)
@@ -201,7 +215,7 @@ module Spree
         subject { create(:stock_location) }
         let(:variant) { create(:base_variant) }
 
-        it 'zero on_hand and backordered', focus: true do
+        it 'zero on_hand and backordered' do
           subject
           variant.stock_items.destroy_all
           on_hand, backordered = subject.fill_status(variant, 1)

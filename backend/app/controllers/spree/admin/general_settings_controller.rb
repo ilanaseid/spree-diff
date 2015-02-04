@@ -1,7 +1,9 @@
 module Spree
   module Admin
     class GeneralSettingsController < Spree::Admin::BaseController
-      before_filter :set_store
+      include Spree::Backend::Callbacks
+
+      before_action :set_store
 
       def edit
         @preferences_security = [:allow_ssl_in_production,
@@ -29,6 +31,12 @@ module Spree
           filter_dismissed_alerts
           render :nothing => true
         end
+      end
+
+      def clear_cache
+        Rails.cache.clear
+        invoke_callbacks(:clear_cache, :after)
+        head :no_content
       end
 
       private

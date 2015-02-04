@@ -3,7 +3,7 @@ module Spree
     acts_as_paranoid
 
     belongs_to :stock_location, class_name: 'Spree::StockLocation', inverse_of: :stock_items
-    belongs_to :variant, class_name: 'Spree::Variant', inverse_of: :stock_items
+    belongs_to :variant, class_name: 'Spree::Variant', inverse_of: :stock_items, counter_cache: true
     has_many :stock_movements, inverse_of: :stock_item
 
     validates_presence_of :stock_location, :variant
@@ -77,7 +77,10 @@ module Spree
       end
 
       def conditional_variant_touch
-        if !Spree::Config.binary_inventory_cache || (count_on_hand_changed? && count_on_hand_change.any?(&:zero?))
+        # the variant_id changes from nil when a new stock location is added
+        stock_changed = (count_on_hand_changed? && count_on_hand_change.any?(&:zero?)) || variant_id_changed?
+
+        if !Spree::Config.binary_inventory_cache || stock_changed
           variant.touch
         end
       end

@@ -33,9 +33,9 @@ module Spree
       # Included & additional
 
       # Included tax adjustments are those which are included in the price.
-      # These ones should not effect the eventual total price.
+      # These ones should not affect the eventual total price.
       #
-      # Additional tax adjustments are the opposite; effecting the final total.
+      # Additional tax adjustments are the opposite, affecting the final total.
       promo_total = 0
       run_callbacks :promo_adjustments do
         promotion_total = adjustments.promotion.reload.map do |adjustment|
@@ -70,7 +70,7 @@ module Spree
     # have the same amount, then it will pick the latest one.
     def choose_best_promotion_adjustment
       if best_promotion_adjustment
-        other_promotions = self.adjustments.promotion.where("id NOT IN (?)", best_promotion_adjustment.id)
+        other_promotions = self.adjustments.promotion.where.not(id: best_promotion_adjustment.id)
         other_promotions.update_all(:eligible => false)
       end
     end

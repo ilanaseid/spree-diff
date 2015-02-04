@@ -53,40 +53,10 @@ describe Spree::Product, :type => :model do
         end
       end
 
-      context "when master variant is not valid" do
-        let(:other_product){ create(:product, sku: "TEST") }
-        before do
-          product.master.sku = other_product.sku
-        end
-
-        it "should not be saved" do
-          expect { product.save! }.to raise_error
-        end
-      end
-
-      context "when master default price is a new record" do
-        before do
-          @price = product.master.build_default_price
-          @price.price = 12
-        end
-
-        it "saves the master" do
-          expect(product.master).to receive(:save!)
-          product.save
-        end
-
-        it "saves the default price" do
-          expect do
-            product.save
-          end.to change{ @price.new_record? }.from(true).to(false)
-        end
-
-      end
-
       context "when master default price changed" do
         before do
           master = product.master
-          master.default_price = create(:price, :variant => master)
+          master.default_price.price = 11
           master.save!
           product.master.default_price.price = 12
         end
@@ -188,10 +158,10 @@ describe Spree::Product, :type => :model do
         expect(product).not_to be_available
       end
 
-      it "should not be available if destroyed" do 
-        product.destroy 
-        expect(product).not_to be_available 
-      end 
+      it "should not be available if destroyed" do
+        product.destroy
+        expect(product).not_to be_available
+      end
     end
 
     context "variants_and_option_values" do
@@ -233,7 +203,7 @@ describe Spree::Product, :type => :model do
     # Regression test for #3737
     context "has stock items" do
       let(:product) { create(:product) }
-      it "can retreive stock items" do
+      it "can retrieve stock items" do
         expect(product.master.stock_items.first).not_to be_nil
         expect(product.stock_items.first).not_to be_nil
       end

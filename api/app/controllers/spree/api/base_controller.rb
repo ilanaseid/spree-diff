@@ -10,11 +10,13 @@ module Spree
 
       attr_accessor :current_api_user
 
-      before_filter :set_content_type
-      before_filter :load_user
-      before_filter :authorize_for_order, :if => Proc.new { order_token.present? }
-      before_filter :authenticate_user
-      before_filter :load_user_roles
+      class_attribute :error_notifier
+
+      before_action :set_content_type
+      before_action :load_user
+      before_action :authorize_for_order, if: Proc.new { order_token.present? }
+      before_action :authenticate_user
+      before_action :load_user_roles
 
       after_filter  :set_jsonp_format
 
@@ -97,6 +99,8 @@ module Spree
         Rails.logger.error exception.message
         Rails.logger.error exception.backtrace.join("\n")
 
+        error_notifier.call(exception, self) if error_notifier
+
         render text: { exception: exception.message }.to_json,
           status: 422 and return
       end
@@ -138,11 +142,9 @@ module Spree
       end
 
       def find_product(id)
-        begin
-          product_scope.friendly.find(id.to_s)
-        rescue ActiveRecord::RecordNotFound
-          product_scope.find(id)
-        end
+        product_scope.friendly.find(id.to_s)
+      rescue ActiveRecord::RecordNotFound
+        product_scope.find(id)
       end
 
       def product_scope
@@ -164,7 +166,7 @@ module Spree
       end
 
       def product_includes
-        [ :option_types, variants: variants_associations, master: variants_associations ]
+        [ :option_types, :taxons, product_properties: :property, variants: variants_associations, master: variants_associations ]
       end
 
       def order_id

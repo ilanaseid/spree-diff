@@ -14,7 +14,7 @@ describe Spree::Calculator::TieredPercent, :type => :model do
       it { is_expected.to be false }
     end
     context "when tiers is not a hash" do
-      before { calculator.preferred_tiers = ["nope"] }
+      before { calculator.preferred_tiers = ["nope", 0] }
       it { is_expected.to be false }
     end
     context "when tiers is a hash" do

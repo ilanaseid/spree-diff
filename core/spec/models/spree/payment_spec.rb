@@ -2,6 +2,7 @@ require 'spec_helper'
 
 describe Spree::Payment, :type => :model do
   let(:order) { Spree::Order.create }
+  let(:refund_reason) { create(:refund_reason) }
 
   let(:gateway) do
     gateway = Spree::Gateway::Bogus.new(:environment => 'test', :active => true)
@@ -9,16 +10,10 @@ describe Spree::Payment, :type => :model do
     gateway
   end
 
-  let(:card) do
-    Spree::CreditCard.create!(
-      number: "4111111111111111",
-      month: "12",
-      year: "2014",
-      verification_value: "123",
-      name: "Name",
-      imported: false
-    )
-  end
+  let(:avs_code) { 'D' }
+  let(:cvv_code) { 'M' }
+
+  let(:card) { create :credit_card }
 
   let(:payment) do
     payment = Spree::Payment.new
@@ -32,13 +27,16 @@ describe Spree::Payment, :type => :model do
   let(:amount_in_cents) { (payment.amount * 100).round }
 
   let!(:success_response) do
-    double('success_response', :success? => true,
-                             :authorization => '123',
-                             :avs_result => { 'code' => 'avs-code' },
-                             :cvv_result => { 'code' => 'cvv-code', 'message' => "CVV Result"})
+    ActiveMerchant::Billing::Response.new(true, '', {}, {
+      authorization: '123',
+      cvv_result: cvv_code,
+      avs_result: { code: avs_code }
+    })
   end
 
-  let(:failed_response) { double('gateway_response', :success? => false) }
+  let(:failed_response) do
+    ActiveMerchant::Billing::Response.new(false, '', {}, {})
+  end
 
   before(:each) do
     # So it doesn't create log entries every time a processing method is called
@@ -110,22 +108,17 @@ describe Spree::Payment, :type => :model do
   end
 
   context "processing" do
-    before do
-      allow(payment).to receive(:update_order)
-      allow(payment).to receive(:create_payment_profile)
-    end
-
     describe "#process!" do
       it "should purchase if with auto_capture" do
         expect(payment.payment_method).to receive(:auto_capture?).and_return(true)
-        expect(payment).to receive(:purchase!)
         payment.process!
+        expect(payment).to be_completed
       end
 
       it "should authorize without auto_capture" do
         expect(payment.payment_method).to receive(:auto_capture?).and_return(false)
-        expect(payment).to receive(:authorize!)
         payment.process!
+        expect(payment).to be_pending
       end
 
       it "should make the state 'processing'" do
@@ -194,9 +187,9 @@ describe Spree::Payment, :type => :model do
         it "should store the response_code, avs_response and cvv_response fields" do
           payment.authorize!
           expect(payment.response_code).to eq('123')
-          expect(payment.avs_response).to eq('avs-code')
-          expect(payment.cvv_response_code).to eq('cvv-code')
-          expect(payment.cvv_response_message).to eq('CVV Result')
+          expect(payment.avs_response).to eq(avs_code)
+          expect(payment.cvv_response_code).to eq(cvv_code)
+          expect(payment.cvv_response_message).to eq(ActiveMerchant::Billing::CVVResult::MESSAGES[cvv_code])
         end
 
         it "should make payment pending" do
@@ -245,7 +238,7 @@ describe Spree::Payment, :type => :model do
         it "should store the response_code and avs_response" do
           payment.purchase!
           expect(payment.response_code).to eq('123')
-          expect(payment.avs_response).to eq('avs-code')
+          expect(payment.avs_response).to eq(avs_code)
         end
 
         it "should make payment complete" do
@@ -410,92 +403,12 @@ describe Spree::Payment, :type => :model do
       end
     end
 
-    describe "#credit!" do
-      before do
-        payment.state = 'completed'
-        payment.response_code = '123'
-      end
-
-      context "when outstanding_balance is less than payment amount" do
-        before do
-          allow(payment.order).to receive_messages :outstanding_balance => 10
-          allow(payment).to receive_messages :credit_allowed => 1000
-        end
-
-        it "should call credit on the gateway with the credit amount and response_code" do
-          expect(gateway).to receive(:credit).with(1000, card, '123', anything).and_return(success_response)
-          payment.credit!
-        end
-      end
-
-      context "when outstanding_balance is equal to payment amount" do
-        before do
-          allow(payment.order).to receive_messages :outstanding_balance => payment.amount
-        end
-
-        it "should call credit on the gateway with the credit amount and response_code" do
-          expect(gateway).to receive(:credit).with(amount_in_cents, card, '123', anything).and_return(success_response)
-          payment.credit!
-        end
-      end
-
-      context "when outstanding_balance is greater than payment amount" do
-        before do
-          allow(payment.order).to receive_messages :outstanding_balance => 101
-        end
-
-        it "should call credit on the gateway with the original payment amount and response_code" do
-          expect(gateway).to receive(:credit).with(amount_in_cents.to_f, card, '123', anything).and_return(success_response)
-          payment.credit!
-        end
-      end
-
-      it "should log the response" do
-        expect(payment.log_entries).to receive(:create!).with(:details => anything)
-        payment.credit!
-      end
-
-      context "when gateway does not match the environment" do
-        it "should raise an exception" do
-          allow(gateway).to receive_messages :environment => "foo"
-          expect { payment.credit! }.to raise_error(Spree::Core::GatewayError)
-        end
-      end
-
-      context "when response is successful" do
-        it "should create an offsetting payment" do
-          expect(Spree::Payment).to receive(:create!)
-          payment.credit!
-        end
-
-        it "resulting payment should have correct values" do
-          allow(payment.order).to receive_messages :outstanding_balance => 100
-          allow(payment).to receive_messages :credit_allowed => 10
-
-          offsetting_payment = payment.credit!
-          expect(offsetting_payment.amount.to_f).to eq(-10)
-          expect(offsetting_payment).to be_completed
-          expect(offsetting_payment.response_code).to eq('12345')
-          expect(offsetting_payment.source).to eq(payment)
-        end
-      end
-    end
-  end
-
-  context "when response is unsuccessful" do
-    it "should not create a payment" do
-      allow(gateway).to receive_messages :credit => failed_response
-      expect(Spree::Payment).not_to receive(:create)
-      expect { payment.credit! }.to raise_error(Spree::Core::GatewayError)
-    end
   end
 
   context "when already processing" do
     it "should return nil without trying to process the source" do
       payment.state = 'processing'
 
-      expect(payment).not_to receive(:authorize!)
-      expect(payment).not_to receive(:purchase!)
       expect(payment.process!).to be_nil
     end
   end
@@ -548,37 +461,6 @@ describe Spree::Payment, :type => :model do
     end
   end
 
-  describe "#credit!" do
-    context "when amount <= credit_allowed" do
-      it "makes the state processing" do
-        payment.state = 'completed'
-        allow(payment).to receive(:credit_allowed).and_return(10)
-        expect(payment).to receive(:started_processing!)
-        expect(payment).to receive(:update_column).and_return(true)
-        payment.partial_credit(10)
-        expect(payment).to be_completed
-      end
-
-      it "calls credit on the source with the payment and amount" do
-        payment.state = 'completed'
-        allow(payment).to receive(:credit_allowed).and_return(10)
-        expect(payment).to receive(:credit!).with(10)
-        payment.partial_credit(10)
-        expect(payment).to be_completed
-      end
-    end
-
-    context "when amount > credit_allowed" do
-      it "should not call credit on the source" do
-        payment.state = 'completed'
-        allow(payment).to receive(:credit_allowed).and_return(10)
-        expect(payment).to_not receive(:started_processing!)
-        payment.partial_credit(20)
-        expect(payment).to be_completed
-      end
-    end
-  end
-
   describe "#save" do
     context "completed payments" do
       it "updates order payment total" do
@@ -626,27 +508,22 @@ describe Spree::Payment, :type => :model do
       end
 
       context "with multiple payment attempts" do
+        let(:attributes) { attributes_for(:credit_card) }
         it "should not try to create profiles on old failed payment attempts" do
           allow_any_instance_of(Spree::Payment).to receive(:payment_method) { gateway }
 
-          order.payments.create!(source_attributes: {number: "4111111111111115",
-                                                    month: "12",
-                                                    year: "2014",
-                                                    verification_value: "123",
-                                                    name: "Name"
-          },
-          :payment_method => gateway,
-          :amount => 100)
+          order.payments.create!(
+            source_attributes: attributes,
+            payment_method: gateway,
+            amount: 100
+          )
           expect(gateway).to receive(:create_profile).exactly :once
           expect(order.payments.count).to eq(1)
-          order.payments.create!(source_attributes: {number: "4111111111111111",
-                                                    month: "12",
-                                                    year: "2014",
-                                                    verification_value: "123",
-                                                    name: "Name"
-          },
-          :payment_method => gateway,
-          :amount => 100)
+          order.payments.create!(
+            source_attributes: attributes,
+            payment_method: gateway,
+            amount: 100
+          )
         end
 
       end
@@ -829,7 +706,7 @@ describe Spree::Payment, :type => :model do
         let(:amount) { '2' }
 
         it '#amount' do
-          expect(subject.amount).to  eql(BigDecimal('2.0'))
+          expect(subject.amount).to eql(BigDecimal('2.0'))
         end
       end
 
@@ -837,7 +714,7 @@ describe Spree::Payment, :type => :model do
         let(:amount) { '$2.99' }
 
         it '#amount' do
-          expect(subject.amount).to  eql(BigDecimal('2.99'))
+          expect(subject.amount).to eql(BigDecimal('2.99'))
         end
       end
 

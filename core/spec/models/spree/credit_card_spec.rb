@@ -1,11 +1,13 @@
 require 'spec_helper'
 
-describe Spree::CreditCard, :type => :model do
+describe Spree::CreditCard, type: :model do
   let(:valid_credit_card_attributes) do
-    { :number => '4111111111111111',
-      :verification_value => '123',
-      :expiry => "12 / 14",
-      :name => "Spree Commerce" }
+    {
+      number: '4111111111111111',
+      verification_value: '123',
+      expiry: "12 / #{(Time.now.year + 1).to_s.last(2)}",
+      name: 'Spree Commerce'
+    }
   end
 
   def self.payment_states
@@ -61,11 +63,6 @@ describe Spree::CreditCard, :type => :model do
   context "#can_credit?" do
     it "should be false if payment is not completed" do
       payment = mock_model(Spree::Payment, completed?: false)
-      expect(credit_card.can_credit?(payment)).to be false
-    end
-
-    it "should be false when order payment_state is not 'credit_owed'" do
-      payment = mock_model(Spree::Payment, completed?: true, order: mock_model(Spree::Order, payment_state: 'paid'))
       expect(credit_card.can_credit?(payment)).to be false
     end
 
@@ -175,39 +172,20 @@ describe Spree::CreditCard, :type => :model do
     end
   end
 
-  context "#create" do
-    context 'with valid attributes' do
-      before do
-        credit_card.attributes = valid_credit_card_attributes
-        credit_card.save!
-      end
-
-      let!(:persisted_card) { Spree::CreditCard.find(credit_card.id) }
-
-      it "should not actually store the number" do
-        expect(persisted_card.number).to be_blank
-      end
-
-      it "should not actually store the security code" do
-        expect(persisted_card.verification_value).to be_blank
-      end
+  context "#save" do
+    before do
+      credit_card.attributes = valid_credit_card_attributes
+      credit_card.save!
     end
 
-    context 'with payment profile' do
-      before do
-        credit_card.attributes = valid_credit_card_attributes.merge(gateway_customer_profile_id: 'abc', gateway_payment_profile_id: '123')
-        credit_card.save!
-        @profile_card = Spree::CreditCard.new(gateway_customer_profile_id: credit_card.gateway_customer_profile_id, gateway_payment_profile_id: credit_card.gateway_payment_profile_id)
-        @profile_card.save!
-      end
+    let!(:persisted_card) { Spree::CreditCard.find(credit_card.id) }
 
-      it 'should fill in missing attributes from existing card' do
-        expect(@profile_card.cc_type).to eq(credit_card.cc_type)
-        expect(@profile_card.last_digits).to eq(credit_card.last_digits)
-        expect(@profile_card.month).to eq(credit_card.month.to_s)
-        expect(@profile_card.name).to eq(credit_card.name)
-        expect(@profile_card.year).to eq(credit_card.year.to_s)
-      end
+    it "should not actually store the number" do
+      expect(persisted_card.number).to be_blank
+    end
+
+    it "should not actually store the security code" do
+      expect(persisted_card.verification_value).to be_blank
     end
   end
 
@@ -368,5 +346,37 @@ describe Spree::CreditCard, :type => :model do
       expect(am_card.last_name).to eq("van Beethoven")
       expect(am_card.verification_value).to eq(123)
     end
+  end
+
+  it 'ensures only one credit card per user is default at a time' do
+    user = FactoryGirl.create(:user)
+    first = FactoryGirl.create(:credit_card, user: user, default: true)
+    second = FactoryGirl.create(:credit_card, user: user, default: true)
+
+    expect(first.reload.default).to eq false
+    expect(second.reload.default).to eq true
+
+    first.default = true
+    first.save!
+
+    expect(first.reload.default).to eq true
+    expect(second.reload.default).to eq false
+  end
+
+  it 'allows default credit cards for different users' do
+    first = FactoryGirl.create(:credit_card, user: FactoryGirl.create(:user), default: true)
+    second = FactoryGirl.create(:credit_card, user: FactoryGirl.create(:user), default: true)
+
+    expect(first.reload.default).to eq true
+    expect(second.reload.default).to eq true
+  end
+
+  it 'allows this card to save even if the previously default card has expired' do
+    user = FactoryGirl.create(:user)
+    first = FactoryGirl.create(:credit_card, user: user, default: true)
+    second = FactoryGirl.create(:credit_card, user: user, default: false)
+    first.update_columns(year: DateTime.now.year, month: 1.month.ago.month)
+
+    expect { second.update_attributes!(default: true) }.not_to raise_error
   end
 end

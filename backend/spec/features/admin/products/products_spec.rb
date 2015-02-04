@@ -258,7 +258,7 @@ describe "Products", :type => :feature do
         expect(page).to have_content("successfully updated!")
       end
     end
-    
+
 
     context "cloning a product", :js => true do
       it "should allow an admin to clone a product" do
@@ -349,8 +349,8 @@ describe "Products", :type => :feature do
   end
 
   context 'with only product permissions' do
-  
-    before do 
+
+    before do
       allow_any_instance_of(Spree::Admin::BaseController).to receive(:spree_current_user).and_return(nil)
     end
 
@@ -371,7 +371,7 @@ describe "Products", :type => :feature do
       expect(page).to have_css('a.edit')
       expect(page).not_to have_css('a.delete-resource')
     end
-  
+
     it "should only display accessible links on edit" do
       visit spree.admin_product_path(product)
 

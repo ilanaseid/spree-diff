@@ -1,10 +1,21 @@
 require 'spec_helper'
 
 module Spree
+  PermittedAttributes.module_eval do
+    mattr_writer :line_item_attributes
+  end
+
+  unless PermittedAttributes.line_item_attributes.include? :some_option
+    PermittedAttributes.line_item_attributes += [:some_option]
+  end
+
+  # This should go in an initializer
+  Spree::Api::LineItemsController.line_item_options += [:some_option]
+
   describe Api::LineItemsController, :type => :controller do
     render_views
 
-    let!(:order) { create(:order_with_line_items) }
+    let!(:order) { create(:order_with_line_items, line_items_count: 1) }
 
     let(:product) { create(:product) }
     let(:attributes) { [:id, :quantity, :price, :variant, :total, :display_amount, :single_display_amount] }
@@ -48,6 +59,17 @@ module Spree
         expect(json_response["variant"]["name"]).not_to be_blank
       end
 
+      it "can add a new line item to an existing order with options" do
+        expect_any_instance_of(LineItem).to receive(:some_option=).with(4)
+        api_post :create,
+                 line_item: {
+                   variant_id: product.master.to_param,
+                   quantity: 1,
+                   options: { some_option: 4 }
+                 }
+        expect(response.status).to eq(201)
+      end
+
       it "default quantity to 1 if none is given" do
         api_post :create, :line_item => { :variant_id => product.master.to_param }
         expect(response.status).to eq(201)
@@ -60,7 +82,7 @@ module Spree
         api_post :create, :line_item => { :variant_id => product.master.to_param, :quantity => 1 }
         expect(response.status).to eq(201)
         order.reload
-        expect(order.line_items.count).to eq(6) # 5 original due to factory, + 1 in this test
+        expect(order.line_items.count).to eq(2) # 1 original due to factory, + 1 in this test
         expect(json_response).to have_attributes(attributes)
         expect(json_response["quantity"]).to eq(11)
       end
@@ -70,9 +92,18 @@ module Spree
         api_put :update, :id => line_item.id, :line_item => { :quantity => 101 }
         expect(response.status).to eq(200)
         order.reload
-        expect(order.total).to eq(1050) # 50 original due to factory, + 1000 in this test
+        expect(order.total).to eq(1010) # 10 original due to factory, + 1000 in this test
         expect(json_response).to have_attributes(attributes)
         expect(json_response["quantity"]).to eq(101)
+      end
+
+      it "can update a line item's options on the order" do
+        expect_any_instance_of(LineItem).to receive(:some_option=).with(12)
+        line_item = order.line_items.first
+        api_put :update,
+                id: line_item.id,
+                line_item: { quantity: 1, options: { some_option: 12 } }
+        expect(response.status).to eq(200)
       end
 
       it "can delete a line item on the order" do
@@ -80,7 +111,7 @@ module Spree
         api_delete :destroy, :id => line_item.id
         expect(response.status).to eq(204)
         order.reload
-        expect(order.line_items.count).to eq(4) # 5 original due to factory, - 1 in this test
+        expect(order.line_items.count).to eq(0) # 1 original due to factory, - 1 in this test
         expect { line_item.reload }.to raise_error(ActiveRecord::RecordNotFound)
       end
 

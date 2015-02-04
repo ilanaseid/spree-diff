@@ -15,8 +15,8 @@ module Spree
     # Need to deal with adjustments before calculator is destroyed.
     before_destroy :deals_with_adjustments_for_deleted_source
 
-    include Spree::Core::CalculatedAdjustments
-    include Spree::Core::AdjustmentSource
+    include Spree::CalculatedAdjustments
+    include Spree::AdjustmentSource
 
     belongs_to :zone, class_name: "Spree::Zone", inverse_of: :tax_rates
     belongs_to :tax_category, class_name: "Spree::TaxCategory", inverse_of: :tax_rates
@@ -61,16 +61,17 @@ module Spree
     # correct rate amounts in the future. For example:
     # https://github.com/spree/spree/issues/4318#issuecomment-34723428
     def self.store_pre_tax_amount(item, rates)
-      if rates.any? { |r| r.included_in_price }
-        case item
-        when Spree::LineItem
-          item_amount = item.discounted_amount
-        when Spree::Shipment
-          item_amount = item.discounted_cost
+      pre_tax_amount = case item
+        when Spree::LineItem then item.discounted_amount
+        when Spree::Shipment then item.discounted_cost
         end
-        pre_tax_amount = item_amount / (1 + rates.map(&:amount).sum)
-        item.update_column(:pre_tax_amount, pre_tax_amount)
+
+      included_rates = rates.select(&:included_in_price)
+      if included_rates.any?
+        pre_tax_amount /= (1 + included_rates.map(&:amount).sum)
       end
+
+      item.update_column(:pre_tax_amount, pre_tax_amount)
     end
 
     # This method is best described by the documentation on #potentially_applicable?

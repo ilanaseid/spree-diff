@@ -25,10 +25,17 @@ describe Spree::Promotion::Rules::Product, :type => :model do
         expect(rule).to be_eligible(order)
       end
 
-      it "should not be eligible if none of the products is in eligible products" do
-        allow(order).to receive_messages(:products => [@product1])
-        allow(rule).to receive_messages(:eligible_products => [@product2, @product3])
-        expect(rule).not_to be_eligible(order)
+      context "when none of the products are eligible products" do
+        before do
+          allow(order).to receive_messages(products: [@product1])
+          allow(rule).to receive_messages(eligible_products: [@product2, @product3])
+        end
+        it { expect(rule).not_to be_eligible(order) }
+        it "sets an error message" do
+          rule.eligible?(order)
+          expect(rule.eligibility_errors.full_messages.first).
+            to eq "You need to add an applicable product before applying this coupon code."
+        end
       end
     end
 
@@ -41,10 +48,17 @@ describe Spree::Promotion::Rules::Product, :type => :model do
         expect(rule).to be_eligible(order)
       end
 
-      it "should not be eligible if any of the eligible products is not ordered" do
-        allow(order).to receive_messages(:products => [@product1, @product2])
-        allow(rule).to receive_messages(:eligible_products => [@product1, @product2, @product3])
-        expect(rule).not_to be_eligible(order)
+      context "when any of the eligible products is not ordered" do
+        before do
+          allow(order).to receive_messages(products: [@product1, @product2])
+          allow(rule).to receive_messages(eligible_products: [@product1, @product2, @product3])
+        end
+        it { expect(rule).not_to be_eligible(order) }
+        it "sets an error message" do
+          rule.eligible?(order)
+          expect(rule.eligibility_errors.full_messages.first).
+            to eq "This coupon code can't be applied because you don't have all of the necessary products in your cart."
+        end
       end
     end
 
@@ -57,10 +71,17 @@ describe Spree::Promotion::Rules::Product, :type => :model do
         expect(rule).to be_eligible(order)
       end
 
-      it "should not be eligible if any of the order's products are in eligible products" do
-        allow(order).to receive_messages(:products => [@product1, @product2])
-        allow(rule).to receive_messages(:eligible_products => [@product2, @product3])
-        expect(rule).not_to be_eligible(order)
+      context "when any of the order's products are in eligible products" do
+        before do
+          allow(order).to receive_messages(products: [@product1, @product2])
+          allow(rule).to receive_messages(eligible_products: [@product2, @product3])
+        end
+        it { expect(rule).not_to be_eligible(order) }
+        it "sets an error message" do
+          rule.eligible?(order)
+          expect(rule.eligibility_errors.full_messages.first).
+            to eq "Your cart contains a product that prevents this coupon code from being applied."
+        end
       end
     end
   end

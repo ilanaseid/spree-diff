@@ -4,6 +4,10 @@ require 'spec_helper'
 describe "Visiting Products", type: :feature, inaccessible: true do
   include_context "custom products"
 
+  let(:store_name) do
+    ((first_store = Spree::Store.first) && first_store.name).to_s
+  end
+
   before(:each) do
     visit spree.root_path
   end
@@ -14,6 +18,49 @@ describe "Visiting Products", type: :feature, inaccessible: true do
 
     click_button 'add-to-cart-button'
     expect(page).to have_content("Shopping Cart")
+  end
+
+  describe 'meta tags and title' do
+    let(:jersey) { Spree::Product.find_by_name('Ruby on Rails Baseball Jersey') }
+    let(:metas) { { :meta_description => 'Brand new Ruby on Rails Jersey', :meta_title => 'Ruby on Rails Baseball Jersey Buy High Quality Geek Apparel', :meta_keywords => 'ror, jersey, ruby' } }
+
+    it 'should return the correct title when displaying a single product' do
+      click_link jersey.name
+      expect(page).to have_title('Ruby on Rails Baseball Jersey - ' + store_name)
+      within('div#product-description') do
+        within('h1.product-title') do
+          expect(page).to have_content('Ruby on Rails Baseball Jersey')
+        end
+      end
+    end
+
+    it 'displays metas' do
+      jersey.update_attributes metas
+      click_link jersey.name
+      expect(page).to have_meta(:description, 'Brand new Ruby on Rails Jersey')
+      expect(page).to have_meta(:keywords, 'ror, jersey, ruby')
+    end
+
+    it 'displays title if set' do
+      jersey.update_attributes metas
+      click_link jersey.name
+      expect(page).to have_title('Ruby on Rails Baseball Jersey Buy High Quality Geek Apparel')
+    end
+
+    it "doesn't use meta_title as heading on page" do
+      jersey.update_attributes metas
+      click_link jersey.name
+      within("h1") do
+        expect(page).to have_content(jersey.name)
+        expect(page).not_to have_content(jersey.meta_title)
+      end
+    end
+
+    it 'uses product name in title when meta_title set to empty string' do
+      jersey.update_attributes meta_title: ''
+      click_link jersey.name
+      expect(page).to have_title('Ruby on Rails Baseball Jersey - ' + store_name)
+    end
   end
 
   context "using Russian Rubles as a currency" do
@@ -208,17 +255,6 @@ describe "Visiting Products", type: :feature, inaccessible: true do
     visit spree.product_path(product)
     expect(page).to have_content "This product is not available in the selected currency."
     expect(page).not_to have_content "add-to-cart-button"
-  end
-
-  it "should return the correct title when displaying a single product" do
-    product = Spree::Product.find_by_name("Ruby on Rails Baseball Jersey")
-    click_link product.name
-
-    within("div#product-description") do
-      within("h1.product-title") do
-        expect(page).to have_content("Ruby on Rails Baseball Jersey")
-      end
-    end
   end
 
   it "should return the correct title when displaying a single product" do

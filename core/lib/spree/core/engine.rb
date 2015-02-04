@@ -4,6 +4,10 @@ module Spree
       isolate_namespace Spree
       engine_name 'spree'
 
+      rake_tasks do
+        load File.join(root, "lib", "tasks", "exchanges.rake")
+      end
+
       initializer "spree.environment", :before => :load_config_initializers do |app|
         app.config.spree = Spree::Core::Environment.new
         Spree::Config = app.config.spree.preferences #legacy access
@@ -71,7 +75,10 @@ module Spree
           Spree::Promotion::Rules::Product,
           Spree::Promotion::Rules::User,
           Spree::Promotion::Rules::FirstOrder,
-          Spree::Promotion::Rules::UserLoggedIn]
+          Spree::Promotion::Rules::UserLoggedIn,
+          Spree::Promotion::Rules::OneUsePerUser,
+          Spree::Promotion::Rules::Taxon,
+        ]
       end
 
       initializer 'spree.promo.register.promotions.actions' do |app|

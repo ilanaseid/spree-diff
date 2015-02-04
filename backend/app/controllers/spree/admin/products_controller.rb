@@ -3,7 +3,7 @@ module Spree
     class ProductsController < ResourceController
       helper 'spree/products'
 
-      before_filter :load_data, :except => :index
+      before_action :load_data, except: :index
       create.before :create_before
       update.before :update_before
       helper_method :clone_object_url
@@ -130,9 +130,6 @@ module Spree
           clone_admin_product_url resource
         end
 
-        def permit_attributes
-          params.require(:product).permit!
-        end
     end
   end
 end

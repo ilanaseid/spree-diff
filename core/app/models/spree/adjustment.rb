@@ -47,12 +47,17 @@ module Spree
     scope :open, -> { where(state: 'open') }
     scope :closed, -> { where(state: 'closed') }
     scope :tax, -> { where(source_type: 'Spree::TaxRate') }
+    scope :non_tax, -> do
+      source_type = arel_table[:source_type]
+      where(source_type.not_eq('Spree::TaxRate').or source_type.eq(nil))
+    end
     scope :price, -> { where(adjustable_type: 'Spree::LineItem') }
     scope :shipping, -> { where(adjustable_type: 'Spree::Shipment') }
     scope :optional, -> { where(mandatory: false) }
     scope :eligible, -> { where(eligible: true) }
     scope :charge, -> { where("#{quoted_table_name}.amount >= 0") }
     scope :credit, -> { where("#{quoted_table_name}.amount < 0") }
+    scope :nonzero, -> { where("#{quoted_table_name}.amount != 0") }
     scope :promotion, -> { where(source_type: 'Spree::PromotionAction') }
     scope :return_authorization, -> { where(source_type: "Spree::ReturnAuthorization") }
     scope :included, -> { where(included: true)  }

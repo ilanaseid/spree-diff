@@ -147,8 +147,8 @@ module Spree
       end
 
       context "when previously ineligible promotions become available" do
-        let(:order_promo1) { create(:promotion, :with_order_adjustment, :with_item_total_rule, order_adjustment_amount: 5, item_total_threshold_amount: 10) }
-        let(:order_promo2) { create(:promotion, :with_order_adjustment, :with_item_total_rule, order_adjustment_amount: 10, item_total_threshold_amount: 20) }
+        let(:order_promo1) { create(:promotion, :with_order_adjustment, :with_item_total_rule, weighted_order_adjustment_amount: 5, item_total_threshold_amount: 10) }
+        let(:order_promo2) { create(:promotion, :with_order_adjustment, :with_item_total_rule, weighted_order_adjustment_amount: 10, item_total_threshold_amount: 20) }
         let(:order_promos) { [ order_promo1, order_promo2 ] }
         let(:line_item_promo1) { create(:promotion, :with_line_item_adjustment, :with_item_total_rule, adjustment_rate: 2.5, item_total_threshold_amount: 10) }
         let(:line_item_promo2) { create(:promotion, :with_line_item_adjustment, :with_item_total_rule, adjustment_rate: 5, item_total_threshold_amount: 20) }
@@ -189,11 +189,10 @@ module Spree
             line_item_promos[promo_sequence[1]].activate order: order
 
             order.reload
-            expect(order.all_adjustments.count).to eq(2), "Expected two adjustments (using sequence #{promo_sequence})"
+            expect(order.all_adjustments.count).to eq(1), "Expected one adjustment (using sequence #{promo_sequence})"
             expect(order.all_adjustments.eligible.count).to eq(1), "Expected one elegible adjustment (using sequence #{promo_sequence})"
-            # TODO: Really, with the rule we've applied to these promos, we'd expect line_item_promo2
-            # to be selected; however, all of the rules are currently completely broken for line-item-
-            # level promos. To make this spec work for now we just roll with current behavior.
+            # line_item_promo1 is the only one that has thus far met the order total threshold, it is the only promo which should be applied.
+            expect(order.all_adjustments.first.source.promotion).to eq(line_item_promo1), "Expected line_item_promo1 to be used (using sequence #{promo_sequence})"
 
             order.contents.add create(:variant, price: 10), 1
             order.save

@@ -2,7 +2,7 @@ module Spree
   class OrdersController < Spree::StoreController
     ssl_required :show
 
-    before_filter :check_authorization
+    before_action :check_authorization
     rescue_from ActiveRecord::RecordNotFound, :with => :render_404
     helper 'spree/products', 'spree/orders'
 
@@ -42,8 +42,7 @@ module Spree
     # Adds a new item to the order (creating a new order if none already exists)
     def populate
       populator = Spree::OrderPopulator.new(current_order(create_order_if_necessary: true), current_currency)
-
-      if populator.populate(params[:variant_id], params[:quantity])
+      if populator.populate(params[:variant_id], params[:quantity], params[:options])
         respond_with(@order) do |format|
           format.html { redirect_to cart_path }
         end

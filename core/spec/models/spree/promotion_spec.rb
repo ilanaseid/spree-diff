@@ -268,10 +268,6 @@ describe Spree::Promotion, :type => :model do
     end
 
     context "when there's no product rule associated" do
-      before(:each) do
-        allow(promotion).to receive_message_chain(:rules, :to_a).and_return([mock_model(Spree::Promotion::Rules::User)])
-      end
-
       it "should not have products but still return an empty array" do
         expect(promotion.products).to be_blank
       end
@@ -279,60 +275,98 @@ describe Spree::Promotion, :type => :model do
   end
 
   context "#eligible?" do
-    before do
-      @order = create(:order)
-      promotion.name = "Foo"
-      calculator = Spree::Calculator::FlatRate.new
-      action_params = { :promotion => promotion, :calculator => calculator }
-      @action = Spree::Promotion::Actions::CreateAdjustment.create(action_params)
+    let(:promotable) { create :order }
+    subject { promotion.eligible?(promotable) }
+    context "when promotion is expired" do
+      before { promotion.expires_at = Time.now - 10.days }
+      it { is_expected.to be false }
     end
-
-    context "when it is expired" do
-      before { allow(promotion).to receive_messages(:expired? => true) }
-      specify { expect(promotion).not_to be_eligible(@order) }
+    context "when promotable is a Spree::LineItem" do
+      let(:promotable) { create :line_item }
+      let(:product) { promotable.product }
+      before do
+        product.promotionable = promotionable
+      end
+      context "and product is promotionable" do
+        let(:promotionable) { true }
+        it { is_expected.to be true }
+      end
+      context "and product is not promotionable" do
+        let(:promotionable) { false }
+        it { is_expected.to be false }
+      end
     end
-
-    context "when it is not expired" do
-      before { promotion.expires_at = Time.now + 1.day }
-      specify { expect(promotion).to be_eligible(@order) }
+    context "when promotable is a Spree::Order" do
+      let(:promotable) { create :order }
+      context "and it is empty" do
+        it { is_expected.to be true }
+      end
+      context "and it contains items" do
+        let!(:line_item) { create(:line_item, order: promotable) }
+        context "and the items are all non-promotionable" do
+          before do
+            line_item.product.update_column(:promotionable, false)
+          end
+          it { is_expected.to be false }
+        end
+        context "and at least one item is promotionable" do
+          it { is_expected.to be true }
+        end
+      end
     end
   end
 
-  context "#rules_are_eligible?" do
+  context "#eligible_rules" do
     let(:promotable) { double('Promotable') }
     it "true if there are no rules" do
-      expect(promotion.rules_are_eligible?(promotable)).to be true
+      expect(promotion.eligible_rules(promotable)).to eq []
     end
 
     it "true if there are no applicable rules" do
       promotion.promotion_rules = [stub_model(Spree::PromotionRule, :eligible? => true, :applicable? => false)]
       allow(promotion.promotion_rules).to receive(:for).and_return([])
-      expect(promotion.rules_are_eligible?(promotable)).to be true
+      expect(promotion.eligible_rules(promotable)).to eq []
     end
 
     context "with 'all' match policy" do
+      let(:promo1) { Spree::PromotionRule.create! }
+      let(:promo2) { Spree::PromotionRule.create! }
+
       before { promotion.match_policy = 'all' }
 
-      it "should have eligible rules if all rules are eligible" do
-        promo1 = Spree::PromotionRule.create!
-        allow(promo1).to receive_messages(eligible?: true, applicable?: true)
-        promo2 = Spree::PromotionRule.create!
-        allow(promo2).to receive_messages(eligible?: true, applicable?: true)
+      context "when all rules are eligible" do
+        before do
+          allow(promo1).to receive_messages(eligible?: true, applicable?: true)
+          allow(promo2).to receive_messages(eligible?: true, applicable?: true)
 
-        promotion.promotion_rules = [promo1, promo2]
-        allow(promotion.promotion_rules).to receive(:for).and_return(promotion.promotion_rules)
-        expect(promotion.rules_are_eligible?(promotable)).to be true
+          promotion.promotion_rules = [promo1, promo2]
+          allow(promotion.promotion_rules).to receive(:for).and_return(promotion.promotion_rules)
+        end
+        it "returns the eligible rules" do
+          expect(promotion.eligible_rules(promotable)).to eq [promo1, promo2]
+        end
+        it "does set anything to eligiblity errors" do
+          promotion.eligible_rules(promotable)
+          expect(promotion.eligibility_errors).to be_nil
+        end
       end
 
-      it "should not have eligible rules if any of the rules is not eligible" do
-        promo1 = Spree::PromotionRule.create!
-        allow(promo1).to receive_messages(eligible?: true, applicable?: true)
-        promo2 = Spree::PromotionRule.create!
-        allow(promo2).to receive_messages(eligible?: false, applicable?: true)
+      context "when any of the rules is not eligible" do
+        let(:errors) { double ActiveModel::Errors, empty?: false }
+        before do
+          allow(promo1).to receive_messages(eligible?: true, applicable?: true, eligibility_errors: nil)
+          allow(promo2).to receive_messages(eligible?: false, applicable?: true, eligibility_errors: errors)
 
-        promotion.promotion_rules = [promo1, promo2]
-        allow(promotion.promotion_rules).to receive(:for).and_return(promotion.promotion_rules)
-        expect(promotion.rules_are_eligible?(promotable)).to be false
+          promotion.promotion_rules = [promo1, promo2]
+          allow(promotion.promotion_rules).to receive(:for).and_return(promotion.promotion_rules)
+        end
+        it "returns nil" do
+          expect(promotion.eligible_rules(promotable)).to be_nil
+        end
+        it "sets eligibility errors to the first non-nil one" do
+          promotion.eligible_rules(promotable)
+          expect(promotion.eligibility_errors).to eq errors
+        end
       end
     end
 
@@ -346,9 +380,83 @@ describe Spree::Promotion, :type => :model do
         allow(true_rule).to receive_messages(:eligible? => true)
         allow(promotion).to receive_messages(:rules => [true_rule])
         allow(promotion).to receive_message_chain(:rules, :for).and_return([true_rule])
-        expect(promotion.rules_are_eligible?(promotable)).to be true
+        expect(promotion.eligible_rules(promotable)).to eq [true_rule]
+      end
+
+      context "when none of the rules are eligible" do
+        let(:promo) { Spree::PromotionRule.create! }
+        let(:errors) { double ActiveModel::Errors, empty?: false }
+        before do
+          allow(promo).to receive_messages(eligible?: false, applicable?: true, eligibility_errors: errors)
+
+          promotion.promotion_rules = [promo]
+          allow(promotion.promotion_rules).to receive(:for).and_return(promotion.promotion_rules)
+        end
+        it "returns nil" do
+          expect(promotion.eligible_rules(promotable)).to be_nil
+        end
+        it "sets eligibility errors to the first non-nil one" do
+          promotion.eligible_rules(promotable)
+          expect(promotion.eligibility_errors).to eq errors
+        end
       end
     end
+  end
+
+  describe '#line_item_actionable?' do
+    let(:order) { double Spree::Order }
+    let(:line_item) { double Spree::LineItem}
+    let(:true_rule) { double Spree::PromotionRule, eligible?: true, applicable?: true, actionable?: true }
+    let(:false_rule) { double Spree::PromotionRule, eligible?: true, applicable?: true, actionable?: false }
+    let(:rules) { [] }
+
+    before do
+      allow(promotion).to receive(:rules) { rules }
+      allow(rules).to receive(:for) { rules }
+    end
+
+    subject { promotion.line_item_actionable? order, line_item }
+
+    context 'when the order is eligible for promotion' do
+      context 'when there are no rules' do
+        it { is_expected.to be }
+      end
+
+      context 'when there are rules' do
+        context 'when the match policy is all' do
+          before { promotion.match_policy = 'all' }
+
+          context 'when all rules allow action on the line item' do
+            let(:rules) { [true_rule] }
+            it { is_expected.to be}
+          end
+
+          context 'when at least one rule does not allow action on the line item' do
+            let(:rules) { [true_rule, false_rule] }
+            it { is_expected.not_to be}
+          end
+        end
+
+        context 'when the match policy is any' do
+          before { promotion.match_policy = 'any' }
+
+          context 'when at least one rule allows action on the line item' do
+            let(:rules) { [true_rule, false_rule] }
+            it { is_expected.to be }
+          end
+
+          context 'when no rules allow action on the line item' do
+            let(:rules) { [false_rule] }
+            it { is_expected.not_to be}
+          end
+        end
+      end
+    end
+
+      context 'when the order is not eligible for the promotion' do
+        before { promotion.starts_at = Time.current + 2.days }
+        it { is_expected.not_to be }
+      end
   end
 
   # regression for #4059
@@ -371,6 +479,42 @@ describe Spree::Promotion, :type => :model do
     end
   end
 
+  describe '#used_by?' do
+    subject { promotion.used_by? user, [excluded_order] }
+
+    let(:promotion) { Spree::Promotion.create! name: 'Test Used By' }
+    let(:user) { create :user }
+    let(:order) { create :completed_order_with_totals }
+    let(:excluded_order) { create :completed_order_with_totals }
+
+    before { promotion.orders << order }
+
+    context 'when the user has used this promo' do
+      before do
+        order.user_id = user.id
+        order.save!
+      end
+
+      context 'when the order is complete' do
+        it { is_expected.to be true }
+
+        context 'when the only matching order is the excluded order' do
+          let(:excluded_order) { order }
+          it { is_expected.to be false }
+        end
+      end
+
+      context 'when the order is not complete' do
+        let(:order) { create :order }
+        it { is_expected.to be false }
+      end
+    end
+
+    context 'when the user has not used this promo' do
+      it { is_expected.to be false }
+    end
+  end
+
   describe "adding items to the cart" do
     let(:order) { create :order }
     let(:line_item) { create :line_item, order: order }
@@ -387,7 +531,7 @@ describe Spree::Promotion, :type => :model do
       expect(line_item.adjustments.size).to eq(1)
       expect(order.adjustment_total).to eq -5
 
-      other_line_item = order.contents.add(variant, 1, order.currency)
+      other_line_item = order.contents.add(variant, 1, currency: order.currency)
 
       expect(other_line_item).not_to eq line_item
       expect(other_line_item.adjustments.size).to eq(1)

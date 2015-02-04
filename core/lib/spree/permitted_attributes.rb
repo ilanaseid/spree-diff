@@ -3,6 +3,7 @@ module Spree
     ATTRIBUTES = [
       :address_attributes,
       :checkout_attributes,
+      :customer_return_attributes,
       :image_attributes,
       :inventory_unit_attributes,
       :line_item_attributes,
@@ -28,16 +29,18 @@ module Spree
     mattr_reader *ATTRIBUTES
 
     @@address_attributes = [
-      :firstname, :lastname, :first_name, :last_name, 
-      :address1, :address2, :city, :country_id, :state_id, 
+      :id, :firstname, :lastname, :first_name, :last_name,
+      :address1, :address2, :city, :country_id, :state_id,
       :zipcode, :phone, :state_name, :alternative_phone, :company,
-      :country => [:iso, :name, :iso3, :iso_name],
-      :state => [:name, :abbr]
+      country: [:iso, :name, :iso3, :iso_name],
+      state: [:name, :abbr]
     ]
 
     @@checkout_attributes = [
       :coupon_code, :email, :shipping_method_id, :special_instructions, :use_billing
     ]
+
+    @@customer_return_attributes = [:stock_location_id, return_items_attributes: [:id, :inventory_unit_id, :return_authorization_id, :returned, :pre_tax_amount, :acceptance_status, :exchange_variant_id]]
 
     @@image_attributes = [:alt, :attachment, :position, :viewable_type, :viewable_id]
 
@@ -62,7 +65,7 @@ module Spree
 
     @@property_attributes = [:name, :presentation]
 
-    @@return_authorization_attributes = [:amount, :reason, :stock_location_id]
+    @@return_authorization_attributes = [:amount, :memo, :stock_location_id, :inventory_units_attributes, :return_authorization_reason_id]
 
     @@shipment_attributes = [
       :order, :special_instructions, :stock_location_id, :id,
@@ -71,7 +74,7 @@ module Spree
     # month / year may be provided by some sources, or others may elect to use one field
     @@source_attributes = [
       :number, :month, :year, :expiry, :verification_value,
-      :first_name, :last_name, :cc_type, :gateway_customer_profile_id, 
+      :first_name, :last_name, :cc_type, :gateway_customer_profile_id,
       :gateway_payment_profile_id, :last_digits, :name, :encrypted_data]
 
     @@stock_item_attributes = [:variant, :stock_location, :backorderable, :variant_id]
@@ -85,7 +88,7 @@ module Spree
       :quantity, :stock_item, :stock_item_id, :originator, :action]
 
     @@store_attributes = [:name, :url, :seo_title, :meta_keywords,
-                         :meta_description, :default_currency]
+                         :meta_description, :default_currency, :mail_from_address]
 
     @@taxonomy_attributes = [:name]
 

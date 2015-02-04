@@ -18,14 +18,6 @@ module Spree
 
     let(:address_params) { { :country_id => Country.first.id, :state_id => State.first.id } }
 
-    let(:billing_address) { { :firstname => "Tiago", :lastname => "Motta", :address1 => "Av Paulista",
-                              :city => "Sao Paulo", :zipcode => "1234567", :phone => "12345678",
-                              :country_id => Country.first.id, :state_id => State.first.id} }
-
-    let(:shipping_address) { { :firstname => "Tiago", :lastname => "Motta", :address1 => "Av Paulista",
-                               :city => "Sao Paulo", :zipcode => "1234567", :phone => "12345678",
-                               :country_id => Country.first.id, :state_id => State.first.id} }
-
     let(:current_api_user) do
       user = Spree.user_class.new(:email => "spree@example.com")
       user.generate_spree_api_key!
@@ -34,6 +26,28 @@ module Spree
 
     before do
       stub_authentication!
+    end
+
+    describe 'PATCH #update' do
+      subject { api_patch :update, id: order.to_param, order: { email: "foo@bar.com" } }
+
+      before do
+        allow_any_instance_of(Spree::Order).to receive_messages :user => current_api_user
+      end
+
+      it 'should be ok' do
+        expect(subject).to be_ok
+      end
+
+      it 'should not invoke OrderContents#update_cart' do
+        expect_any_instance_of(Spree::OrderContents).to_not receive(:update_cart)
+        subject
+      end
+
+      it 'should update the email' do
+        subject
+        expect(order.reload.email).to eq('foo@bar.com')
+      end
     end
 
     it "cannot view all orders" do
@@ -73,16 +87,67 @@ module Spree
         expect(json_response["orders"].length).to eq(0)
       end
 
-      it "returns orders in reverse chronological order" do
-        order2 = create(:order, line_items: [line_item], user: order.user)
+      it "returns orders in reverse chronological order by completed_at" do
+        order.update_columns completed_at: Time.now
+
+        order2 = Order.create user: order.user, completed_at: Time.now - 1.day
         expect(order2.created_at).to be > order.created_at
+        order3 = Order.create user: order.user, completed_at: nil
+        expect(order3.created_at).to be > order2.created_at
+        order4 = Order.create user: order.user, completed_at: nil
+        expect(order4.created_at).to be > order3.created_at
 
         api_get :mine
         expect(response.status).to eq(200)
         expect(json_response["pages"]).to eq(1)
-        expect(json_response["orders"].length).to eq(2)
-        expect(json_response["orders"][0]["number"]).to eq(order2.number)
-        expect(json_response["orders"][1]["number"]).to eq(order.number)
+        expect(json_response["orders"].length).to eq(4)
+        expect(json_response["orders"][0]["number"]).to eq(order.number)
+        expect(json_response["orders"][1]["number"]).to eq(order2.number)
+        expect(json_response["orders"][2]["number"]).to eq(order4.number)
+        expect(json_response["orders"][3]["number"]).to eq(order3.number)
+      end
+    end
+
+    describe 'current' do
+      let(:current_api_user) { order.user }
+      let!(:order) { create(:order, line_items: [line_item]) }
+
+      subject do
+        api_get :current, format: 'json'
+      end
+
+      context "an incomplete order exists" do
+        it "returns that order" do
+          expect(JSON.parse(subject.body)['id']).to eq order.id
+          expect(subject).to be_success
+        end
+      end
+
+      context "multiple incomplete orders exist" do
+        it "returns the latest incomplete order" do
+          new_order = Spree::Order.create! user: order.user
+          expect(new_order.created_at).to be > order.created_at
+          expect(JSON.parse(subject.body)['id']).to eq new_order.id
+        end
+      end
+
+      context "an incomplete order does not exist" do
+
+        before do
+          order.update_attribute(:state, order_state)
+          order.update_attribute(:completed_at, 5.minutes.ago)
+        end
+
+        ["complete", "returned", "awaiting_return"].each do |order_state|
+          context "order is in the #{order_state} state" do
+            let(:order_state) { order_state }
+
+            it "returns no content" do
+              expect(subject.status).to eq 204
+              expect(subject.body).to be_blank
+            end
+          end
+        end
       end
     end
 
@@ -112,6 +177,7 @@ module Spree
           expect(variant['in_stock']).to eq(false)
           expect(variant['total_on_hand']).to eq(0)
           expect(variant['is_backorderable']).to eq(true)
+          expect(variant['is_destroyed']).to eq(false)
         end
       end
 
@@ -285,16 +351,17 @@ module Spree
       let!(:line_item) { order.contents.add(variant, 1) }
       let!(:payment_method) { create(:check_payment_method) }
 
-      let(:address_params) { { :country_id => Country.first.id, :state_id => State.first.id } }
+      let(:address_params) { { :country_id => country.id } }
       let(:billing_address) { { :firstname => "Tiago", :lastname => "Motta", :address1 => "Av Paulista",
-                                :city => "Sao Paulo", :zipcode => "1234567", :phone => "12345678",
-                                :country_id => Country.first.id, :state_id => State.first.id} }
+                                :city => "Sao Paulo", :zipcode => "01310-300", :phone => "12345678",
+                                :country_id => country.id} }
       let(:shipping_address) { { :firstname => "Tiago", :lastname => "Motta", :address1 => "Av Paulista",
-                                 :city => "Sao Paulo", :zipcode => "1234567", :phone => "12345678",
-                                 :country_id => Country.first.id, :state_id => State.first.id} }
+                                 :city => "Sao Paulo", :zipcode => "01310-300", :phone => "12345678",
+                                 :country_id => country.id} }
+      let(:country) { create(:country, {name: "Brazil", iso_name: "BRAZIL", iso: "BR", iso3: "BRA", numcode: 76 })}
 
       before do
-        allow_any_instance_of(Order).to receive_messages :user => current_api_user
+        allow_any_instance_of(Order).to receive_messages user: current_api_user
         order.next # Switch from cart to address
         order.bill_address = nil
         order.ship_address = nil
@@ -362,7 +429,7 @@ module Spree
       it "can add billing address" do
         api_put :update, :id => order.to_param, :order => { :bill_address_attributes => billing_address }
 
-        expect(order.reload.bill_address).not_to be_nil
+        expect(order.reload.bill_address).to_not be_nil
       end
 
       it "receives error message if trying to add billing address with errors" do
@@ -426,7 +493,7 @@ module Spree
         it "can empty an order" do
           expect(order_with_line_items.adjustments.count).to eq(1)
           api_put :empty, :id => order_with_line_items.to_param
-          expect(response.status).to eq(200)
+          expect(response.status).to eq(204)
           order_with_line_items.reload
           expect(order_with_line_items.line_items).to be_empty
           expect(order_with_line_items.adjustments).to be_empty
@@ -515,6 +582,7 @@ module Spree
             json_shipping_method = shipment["shipping_methods"][0]
             expect(json_shipping_method["id"]).to eq(shipping_method.id)
             expect(json_shipping_method["name"]).to eq(shipping_method.name)
+            expect(json_shipping_method["code"]).to eq(shipping_method.code)
             expect(json_shipping_method["zones"]).not_to be_empty
             expect(json_shipping_method["shipping_categories"]).not_to be_empty
 
@@ -526,6 +594,7 @@ module Spree
             expect(shipping_rate["cost"]).to eq("10.0")
             expect(shipping_rate["selected"]).to be true
             expect(shipping_rate["display_cost"]).to eq("$10.00")
+            expect(shipping_rate["shipping_method_code"]).to eq(json_shipping_method["code"])
 
             expect(shipment["stock_location_name"]).not_to be_blank
             manifest_item = shipment["manifest"][0]

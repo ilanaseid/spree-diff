@@ -110,7 +110,7 @@ describe "Coupon code promotions", type: :feature, js: true do
         before do
           rule = Spree::Promotion::Rules::ItemTotal.new
           rule.promotion = promotion
-          rule.preferred_amount = 100
+          rule.preferred_amount_min = 100
           rule.save
         end
 
@@ -119,7 +119,7 @@ describe "Coupon code promotions", type: :feature, js: true do
 
           fill_in "order_coupon_code", :with => "onetwo"
           click_button "Update"
-          expect(page).to have_content(Spree.t(:coupon_code_not_eligible))
+          expect(page).to have_content(Spree.t(:item_total_less_than_or_equal, scope: [:eligibility_errors, :messages], amount: "$100.00"))
         end
       end
 

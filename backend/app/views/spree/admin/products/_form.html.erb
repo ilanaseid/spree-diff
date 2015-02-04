@@ -20,7 +20,7 @@
     <div data-hook="admin_product_form_description">
       <%= f.field_container :description do %>
         <%= f.label :description, Spree.t(:description) %>
-        <%= f.text_area :description, {:rows => "#{unless @product.has_variants? then '20' else '13' end}", :class => 'fullwidth'} %>
+        <%= f.text_area :description, {:rows => "#{unless @product.has_variants? then '22' else '15' end}", :class => 'fullwidth'} %>
         <%= f.error_message_on :description %>
       <% end %>
     </div>
@@ -61,6 +61,14 @@
       <% end %>
     </div>
 
+    <div data-hook="admin_product_form_promotionable">
+      <%= f.field_container :promotionable do %>
+        <%= f.label :promotionable do %>
+          <%= f.check_box :promotionable %> <%= Spree.t(:promotionable) %>
+        <% end %>
+      <% end %>
+    </div>
+
     <% if @product.has_variants? %>
       <div data-hook="admin_product_form_multiple_variants">
         <%= f.label :skus, Spree.t(:skus) %>
@@ -77,7 +85,7 @@
         </span>
         <div class="info-actions">
           <% if can?(:admin, Spree::Variant) %>
-            <%= link_to_with_icon 'th-large', Spree.t(:manage_variants),  admin_product_variants_url(@product) %>
+            <%= link_to_with_icon 'th-large', Spree.t(:manage_variants), admin_product_variants_url(@product) %>
           <% end %>
         </div>
       </div>
@@ -143,6 +151,13 @@
   </div>
 
   <div data-hook="admin_product_form_meta" class="alpha omega twelve columns">
+    <div data-hook="admin_product_form_meta_title">
+      <%= f.field_container :meta_title do %>
+        <%= f.label :meta_title, Spree.t(:meta_title) %>
+        <%= f.text_field :meta_title, :class => 'fullwidth' %>
+      <% end %>
+    </div>
+
     <div data-hook="admin_product_form_meta_keywords">
       <%= f.field_container :meta_keywords do %>
         <%= f.label :meta_keywords, Spree.t(:meta_keywords) %>

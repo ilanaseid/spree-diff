@@ -32,11 +32,7 @@ module Spree
     private
 
     def check_price
-      raise "Price must belong to a variant" if variant.nil?
-
-      if currency.nil?
-        self.currency = Spree::Config[:currency]
-      end
+      self.currency ||= Spree::Config[:currency]
     end
 
     def maximum_amount
